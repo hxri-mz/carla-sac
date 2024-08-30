@@ -164,3 +164,7 @@ cython_debug/
 checkpoints/
 runs/
 
+*.png
+imitation_checkpoints/*
+dataset/*
+chkpt/*

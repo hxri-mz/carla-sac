@@ -40,6 +40,8 @@ class CarlaGymEnv():
         self.observation_space = (OBS_SHAPE,)
         self.continous_action_space = (2,)
         self.action_space_max = 1
+        
+        # self.set_other_vehicles()
         # self.create_pedestrians()
     
     def reset(self):
@@ -57,7 +59,7 @@ class CarlaGymEnv():
 
             # Set a custom spawn point for each towns
             if self.town == "Town07":
-                transform = self.map.get_spawn_points()[38] #Town7  is 38 
+                transform = random.choice(self.map.get_spawn_points()) #Town7  is 38 
                 self.total_distance = 750
             elif self.town == "Town02":
                 transform = self.map.get_spawn_points()[1] #Town2 is 1
@@ -195,7 +197,7 @@ class CarlaGymEnv():
                 self.previous_steer = steer
                 self.throttle = 1.0
             
-            # Traffic Light state
+            # Traffic Light state and set it to green for it to move ahead easily
             if self.vehicle.is_at_traffic_light():
                 traffic_light = self.vehicle.get_traffic_light()
                 if traffic_light.get_state() == carla.TrafficLightState.Red:
@@ -300,7 +302,7 @@ class CarlaGymEnv():
             normalized_angle = abs(self.angle / np.deg2rad(20))
             # self.navigation_obs = np.array([self.throttle, normalized_velocity, self.previous_steer, normalized_distance_from_center, normalized_angle])
             self.navigation_obs = np.array([self.previous_steer, normalized_distance_from_center, normalized_angle])
-            cmd = np.array(onehot(self.route_directions[self.current_waypoint_index].value))
+            cmd = np.array(onehot(self.route_directions[self.current_waypoint_index+1].value))
             self.navigation_obs = np.concatenate((self.navigation_obs, cmd), axis=None)
             # print(f'Nav cmd : {cmd}')
             # print(self.navigation_obs)

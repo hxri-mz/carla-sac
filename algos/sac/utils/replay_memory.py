@@ -41,3 +41,19 @@ class ReplayBuffer():
         dones = self.terminal_mem[batch]
 
         return states, actions, rewards, n_states, dones
+    
+    def get_latest(self, size):
+        states = self.state_mem[-size:]
+        n_states = self.n_state_mem[-size:]
+        actions = self.action_mem[-size:]
+        rewards = self.reward_mem[-size:]
+        dones = self.terminal_mem[-size:]
+        
+        return states, actions, rewards, n_states, dones
+    
+    def hybrid_memory(self, batch_size, size):
+        states_1, actions_1, rewards_1, n_states_1, dones_1 = self.sample_buffer(batch_size)
+        states_2, actions_2, rewards_2, n_states_2, dones_2 = self.get_latest(size)
+        
+        
+        

@@ -29,6 +29,7 @@ class SACAgent():
         self.batch_size = batch_size
         self.n_actions = n_actions
         self.action_std = action_std_init
+        self.num_epochs = 8
 
         # define the networks
         # TODO: create a max_action value in carla env
@@ -45,16 +46,15 @@ class SACAgent():
         self.scale_factor = reward_scale
         self.update_network_parameters(tau=1)
 
-    # def set_action_std(self, new_action_std):
-    #     self.action_std = new_action_std
-    #     self.policy.set_action_std(new_action_std)
-    #     self.old_policy.set_action_std(new_action_std)
+    def set_action_std(self, new_action_std):
+        self.action_std = new_action_std
+        self.actor.set_action_std(new_action_std)
 
     def action_selection(self, observation):
         # import pdb; pdb.set_trace()
         # state = torch.tensor([obs], dtype=torch.float32).to(self.actor.device)
         state = observation.to(self.actor.device)
-        actions, _ = self.actor.sample_normal(state, reparameterize=True)
+        actions, _ = self.actor.sample_normal(state, reparameterize=False)
         return actions.cpu().detach().numpy()[0]
     
     def memorize(self, state, action, reward, n_state, done):
@@ -64,6 +64,7 @@ class SACAgent():
         if tau is None:
             tau = self.tau
 
+        # Update value parameters
         target_params = self.value_target.named_parameters()
         value_params = self.value.named_parameters()
 
@@ -81,8 +82,7 @@ class SACAgent():
             print(self.memory.mem_counter)
             return
         else:
-            print("Training")
-            # sample the buffer
+            # state, action, reward, n_state, done = self.memory.sample_buffer(self.batch_size)
             state, action, reward, n_state, done = self.memory.sample_buffer(self.batch_size)
 
             # put everything to cuda as tensors
@@ -97,7 +97,7 @@ class SACAgent():
             target[done] = 0.0
 
             # actions from new policy
-            actions, log_probas = self.actor.sample_normal(state, reparameterize=False)
+            actions, log_probas = self.actor.sample_normal(state, reparameterize=True)
             log_probas = log_probas.view(-1)
             q_a_new_policy = self.critic_a(state, actions)
             q_b_new_policy = self.critic_b(state, actions)
@@ -139,6 +139,7 @@ class SACAgent():
 
             self.update_network_parameters()
 
+            print(f"Training Metrics - Actor Loss: {actor_loss} | Critic Loss: {critic_loss} | Value Loss: {value_loss}")
 
 
     def save_models(self):

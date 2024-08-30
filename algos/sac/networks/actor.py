@@ -22,6 +22,7 @@ class ActorNetwork(nn.Module):
         super(ActorNetwork, self).__init__()
         self.name = name
         self.beta = alpha
+        self.temp = 0.1
 
         # layer dims
         self.input_dims = input_dims
@@ -38,34 +39,28 @@ class ActorNetwork(nn.Module):
         
         self.code_size = 95
         self.nav_size = 6
+        self.max_action = 1.0
         
         self.cov_var = torch.full((self.n_actions,), action_std_init)
 
         # Create the covariance matrix
         self.cov_mat = torch.diag(self.cov_var).unsqueeze(dim=0)
-
-        # # Model layers
-        # self.fc1 = nn.Linear(*self.input_dims, self.fc1_dims)
-        # self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
-        # self.fc3 = nn.Linear(self.fc2_dims, self.fc3_dims)
-        # self.mu = nn.Linear(self.fc3_dims, self.n_actions) # mean
-        # self.sigma = nn.Linear(self.fc3_dims, self.n_actions) # std
         
         self.reshape = nn.Sequential(
                         nn.Linear(2048, self.code_size),
-                        nn.Tanh(),
+                        nn.ReLU(),
                         nn.Linear(self.code_size, self.code_size),
-                        nn.Tanh(),
+                        nn.ReLU(),
                     )
         
         # actor
         self.actor = nn.Sequential(
                         nn.Linear(self.code_size+self.nav_size, 128),
-                        nn.Tanh(),
+                        nn.ReLU(),
                         nn.Linear(128, 64),
-                        nn.Tanh(),
+                        nn.ReLU(),
                         nn.Linear(64, 32),
-                        nn.Tanh(),
+                        nn.ReLU(),
                         nn.Linear(32, self.n_actions),
                         nn.Tanh()
                     )
@@ -78,41 +73,35 @@ class ActorNetwork(nn.Module):
 
     def set_action_std(self, new_action_std):
         self.cov_var = torch.full((self.n_actions,), new_action_std)
+        # self.cov_mat = torch.diag(self.cov_var).unsqueeze(dim=0)
     
     def forward(self):        
-        # input = state
-        # x = self.fc1(input)
-        # x = F.tanh(x)
-        # x = self.fc2(x)
-        # x = F.tanh(x)
-        # x = self.fc3(x)
-        # x = F.tanh(x)
-        # mu = self.mu(x)
-        # sigma = self.sigma(x)
-        # sigma = torch.clamp(sigma, min=self.reparam_noise, max=1) # clamp is computationally better than sigmoid
-        # return mu, sigma
         raise NotImplementedError
     
     def sample_normal(self, obs, reparameterize=True):
         obs_a = obs[:,:-self.nav_size]
         obs_n = obs[:,-self.nav_size:]
         rs_obs_a = self.reshape(obs_a)
-        obs = torch.cat((rs_obs_a, obs_n), -1)
+        obsn = torch.cat((rs_obs_a, obs_n), -1)
         
-        mean = self.actor(obs)
-        # Create our Multivariate Normal Distribution
-        dist = MultivariateNormal(mean, self.cov_mat)
+        mean = self.actor(obsn)
+
+        cov_mat = torch.diag(self.cov_var).unsqueeze(dim=0).repeat(obsn.size(0), 1, 1)
+        dist = MultivariateNormal(mean, cov_mat)
         # Sample an action from the distribution and get its log prob
-        action = dist.sample()
+        if reparameterize:
+            action = dist.rsample()
+        else:
+            action = dist.sample()
         log_prob = dist.log_prob(action)
-        return action.detach(), log_prob.detach()    
+        return action, self.temp*log_prob  
 
     def save_checkpoint(self):
         torch.save(self.state_dict(), self.checkpoint_file)
 
     def load_checkpoint(self):
         chkpt = torch.load(self.checkpoint_file)
-        torch.load_state_dict(chkpt)
+        self.load_state_dict(chkpt)
 
 
 

@@ -5,13 +5,16 @@ import pygame
 from sim.connection import carla
 from sim.settings import RGB_CAMERA, SSC_CAMERA
 
-
 class CameraSensor():
 
-    def __init__(self, vehicle):
+    def __init__(self, vehicle, path):
         self.sensor_name = SSC_CAMERA
         self.parent = vehicle
+        self.save_path = path
+        self.count = None
+        self.scene = None
         self.front_camera = list()
+        self.raw_camera = None
         world = self.parent.get_world()
         self.sensor = self._set_camera_sensor(world)
         weak_self = weakref.ref(self)
@@ -20,11 +23,11 @@ class CameraSensor():
 
     def _set_camera_sensor(self, world):
         front_camera_bp = world.get_blueprint_library().find(self.sensor_name)
-        front_camera_bp.set_attribute('image_size_x', f'224')
-        front_camera_bp.set_attribute('image_size_y', f'224')
-        front_camera_bp.set_attribute('fov', f'125')
+        front_camera_bp.set_attribute('image_size_x', f'1600')
+        front_camera_bp.set_attribute('image_size_y', f'900')
+        front_camera_bp.set_attribute('fov', f'70')
         front_camera = world.spawn_actor(front_camera_bp, carla.Transform(
-            carla.Location(x=2.4, z=1.5), carla.Rotation(pitch= -10)), attach_to=self.parent)
+            carla.Location(x=1.5, z=1.5), carla.Rotation(pitch=0)), attach_to=self.parent)
         return front_camera
 
     @staticmethod
@@ -32,27 +35,31 @@ class CameraSensor():
         self = weak_self()
         if not self:
             return
-        if self.sensor_name == SSC_CAMERA:
-            image.convert(carla.ColorConverter.CityScapesPalette)
-        placeholder = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        placeholder1 = placeholder.reshape((image.height, image.width, 4))
-        target = placeholder1[:, :, :3]
-        target = target[:, :, ::-1]
+        # if self.sensor_name == SSC_CAMERA:
+            # self.front_camera.append(image)
+        #     # import pdb; pdb.set_trace()
+        # self.front_camera.append(image)
+        self.raw_camera = image
+            # image.convert(carla.ColorConverter.CityScapesPalette)
+        # placeholder = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        # placeholder1 = placeholder.reshape((image.height, image.width, 4))
+        # target = placeholder1[:, :, :3]
+        # target = target[:, :, ::-1]
         
-        if self.sensor_name == SSC_CAMERA:
-            # Selective mapping
-            # key = [128, 64,128] # Only road
-            # indices = np.where(np.all(target == key, axis=-1))
-            # idx = list(set(zip(indices[0], indices[1])))
-            # tr = np.zeros((224, 224, 3))
-            # for id in idx:
-            #     tr[id[0], id[1], :] = [1,1,1]
-            # target_new = np.multiply(target, tr)
-            # target_new[target_new >= 1] = 255.0
-            # self.front_camera.append(target_new)
-            self.front_camera.append(target)
-        else:
-            self.front_camera.append(target)
+        # if self.sensor_name == SSC_CAMERA:
+        # #     # Selective mapping
+        # #     # key = [128, 64,128] # Only road
+        # #     # indices = np.where(np.all(target == key, axis=-1))
+        # #     # idx = list(set(zip(indices[0], indices[1])))
+        # #     # tr = np.zeros((224, 224, 3))
+        # #     # for id in idx:
+        # #     #     tr[id[0], id[1], :] = [1,1,1]
+        # #     # target_new = np.multiply(target, tr)
+        # #     # target_new[target_new >= 1] = 255.0
+        # #     # self.front_camera.append(target_new)
+        #     self.front_camera.append(target)
+        # else:
+        #     self.front_camera.append(target)
 
 
 class CameraSensorEnv:

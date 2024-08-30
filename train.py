@@ -12,15 +12,23 @@ from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 from algos.ppo.agent import PPOAgent
 from algos.sac.agent import SACAgent
+# from algos.sac2.sac import SAC_Agent
+# from algos.sac2.utils import Transition
 from sim.connection import ClientConnection
 from sim.environment import CarlaGymEnv
 from parameters import *
+from sim.settings import *
+
 from utils.transform import TransformObservation
 from encoder.zoo import EncoderZoo
 import pygame
 from encoder.zoo import EncoderZoo
 from utils.transform import TransformObservation
-
+import carla
+from sim.sensors import CameraSensor, CameraSensorEnv, CollisionSensor
+from utils.record import record_data
+from utils.road_option import road_option, onehot
+import pathlib
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -47,7 +55,26 @@ def boolean_string(s):
         raise ValueError('Not a valid boolean string')
     return s == 'True'
 
+def angle_diff(v0, v1):
+    angle = np.arctan2(v1[1], v1[0]) - np.arctan2(v0[1], v0[0])
+    if angle > np.pi: angle -= 2 * np.pi
+    elif angle <= -np.pi: angle += 2 * np.pi
+    return angle
 
+def vector(v):
+    if isinstance(v, carla.Location) or isinstance(v, carla.Vector3D):
+        return np.array([v.x, v.y, v.z])
+    elif isinstance(v, carla.Rotation):
+        return np.array([v.pitch, v.yaw, v.roll])
+    
+def distance_to_line(A, B, p):
+    num   = np.linalg.norm(np.cross(B - A, A - p))
+    denom = np.linalg.norm(B - A)
+    if np.isclose(denom, 0):
+        return np.linalg.norm(p - A)
+    return num / denom
+
+torch.autograd.set_detect_anomaly(True)
 
 def runner():
 
@@ -58,6 +85,7 @@ def runner():
     args = parse_args()
     exp_name = args.exp_name
     train = args.train
+    collect = True
     town = args.town
     checkpoint_load = args.load_checkpoint
     total_timesteps = args.total_timesteps
@@ -164,40 +192,114 @@ def runner():
                 agent = SACAgent(input_dims=env.observation_space,
                                  env=env,
                                  n_actions=env.continous_action_space[0])
+                # agent = SAC_Agent(seed=1337,
+                #                   state_dim=env.observation_space,
+                #                   action_dim=env.continous_action_space[0])
+                if train == False:
+                    agent.load_models()
                 print('Initialized SAC agent')
             else:
                 print('No algo found')
-        if train:
+        if collect:
+            SAVE_DIR = '/mnt/disks/data/carla-sac/dataset'
+            pathlib.Path(f'{SAVE_DIR}/sensor').mkdir(parents=True, exist_ok=True) 
+            pathlib.Path(f'{SAVE_DIR}/nav').mkdir(parents=True, exist_ok=True) 
+            for num in range(200):
+                camera_obj = None
+                env_camera_obj = None
+                client, world = ClientConnection(town).setup()
+
+                # settings = world.get_settings()
+                # settings.synchronous_mode = True 
+                # settings.fixed_delta_seconds = 0.05
+                # world.apply_settings(settings)
+
+                traffic_manager = client.get_trafficmanager()
+                traffic_manager.set_global_distance_to_leading_vehicle(1.0)
+                traffic_manager.set_hybrid_physics_mode(False)
+                # traffic_manager.set_synchronous_mode(True)
+                traffic_manager.global_percentage_speed_difference(40.0)
+                
+                blueprint_library = world.get_blueprint_library()
+                bp = blueprint_library.filter(CAR_NAME)[0]
+                spawn_point = random.choice(world.get_map().get_spawn_points())
+                print(f"Scene: {num} | Spawned point: x={spawn_point}")
+                vehicle = world.spawn_actor(bp, spawn_point)
+                vehicle.set_autopilot(True, traffic_manager.get_port())
+                camera_obj = CameraSensor(vehicle, SAVE_DIR)
+                env_camera_obj = CameraSensorEnv(vehicle)
+                idx = 0
+                while True:
+                    if idx == 0:
+                            pathlib.Path(f'{SAVE_DIR}/sensor/scene_{num}').mkdir(parents=True, exist_ok=True) 
+                            pathlib.Path(f'{SAVE_DIR}/nav/scene_{num}').mkdir(parents=True, exist_ok=True) 
+                    # Traffic Light state
+                    if vehicle.is_at_traffic_light():
+                        traffic_light = vehicle.get_traffic_light()
+                        if traffic_light.get_state() == carla.TrafficLightState.Red:
+                            traffic_light.set_state(carla.TrafficLightState.Green)
+                            
+                    # Get camera data
+                    # while(len(camera_obj.front_camera) == 0):
+                    #     time.sleep(0.0001)
+                    # image_obs = camera_obj.front_camera.pop(-1)
+                    while(camera_obj.raw_camera == None):
+                        time.sleep(0.0001)
+                    image_obs = camera_obj.raw_camera
+                    # image_obs.save_to_disk(f'{SAVE_DIR}/sensor/scene_{num}/{idx}.png', carla.ColorConverter.CityScapesPalette)
+                    # print(image_obs.shape)
+                    
+                    # Get velocity
+                    velocity = vehicle.get_velocity()
+                    vel = np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2) * 3.6
+                    # print(f"Velocity: {vel}")
+                    
+                    # Get vehicle orientation (angle)
+                    fwd    = vector(velocity)
+                    wp_fwd = vector(vehicle.get_transform().get_forward_vector())
+                    angle  = angle_diff(fwd, wp_fwd)
+                    # print(f"Angle: {angle}")
+                    
+                    # Get Steering and Throttle
+                    # print(f"Throttle: {vehicle.get_control().throttle} | Steering: {vehicle.get_control().steer}")
+                    
+                    # Distance form centre
+                    map = world.get_map()
+                    cur_wp = map.get_waypoint(vehicle.get_location())
+                    next_wp = cur_wp.next(1.0)[0]
+                    
+                    distance_from_center = distance_to_line(vector(cur_wp.transform.location),vector(next_wp.transform.location),vector(vehicle.get_location()))
+                    # print(f"Distance for centre: {distance_from_center}")
+                    
+                    ego_cmd = road_option(cur_wp, next_wp)
+                    cmd = np.array(onehot(ego_cmd.value))
+                    record_data(image_obs, [vel, angle, vehicle.get_control().throttle, vehicle.get_control().steer, distance_from_center, cmd], idx, num)
+                    world.tick()
+                    idx += 1
+                    if idx == 1200:
+                        break
+        elif train:
             #Training
             while timestep < total_timesteps:
             
                 observation = env.reset()
                 obs = tfm.transform(observation)
-                # observation = encoder.transform(observation)
                 current_ep_reward = 0
                 t1 = datetime.now()
 
                 for t in range(args.episode_length):
                     # select action with policy
-                    # action = agent.get_action(observation, train=True)
                     action = agent.action_selection(obs)
-                    # print(action)
                     n_observation, reward, done, info = env.step(action)
                     n_obs = tfm.transform(n_observation)
                     if observation is None:
                         break
-                    # observation = encoder.transform(observation)
-                    # agent.memory.rewards.append(reward)
-                    # agent.memory.dones.append(done)
-                    # import pdb; pdb.set_trace()
+                   
                     agent.memorize(obs, action, reward, n_obs, done)
                     
                     timestep +=1
                     current_ep_reward += reward
                     
-                    # if timestep % action_std_decay_freq == 0:
-                    #     action_std_init =  agent.decay_action_std(action_std_decay_rate, min_action_std)
-
                     if timestep == total_timesteps -1:
                         agent.save_models()
 
@@ -272,16 +374,19 @@ def runner():
             while timestep < args.test_timesteps:
                 observation = env.reset()
                 # observation = encoder.transform(observation)
+                obs = tfm.transform(observation)
 
                 current_ep_reward = 0
                 t1 = datetime.now()
                 for t in range(args.episode_length):
                     # select action with policy
-                    action = agent.get_action(observation, train=False)
-                    observation, reward, done, info = env.step(action)
-                    if observation is None:
-                        break
+                    # action = agent.get_action(observation, train=False)
+                    action = agent.action_selection(obs)
+                    n_obs, reward, done, info = env.step(action)
+                    # if n_obs is None:
+                    #     break
                     # observation = encoder.transform(observation)
+                    n_obs = tfm.transform(n_obs)
                     
                     timestep +=1
                     current_ep_reward += reward
@@ -294,6 +399,8 @@ def runner():
                         
                         episodic_length.append(abs(t3.total_seconds()))
                         break
+                    obs = n_obs
+                    
                 deviation_from_center += info[1]
                 distance_covered += info[0]
                 
