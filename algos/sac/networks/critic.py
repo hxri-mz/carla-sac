@@ -35,20 +35,30 @@ class CriticNetwork(nn.Module):
         self.code_size = 95
         self.nav_size = 6
         
+        # self.reshape = nn.Sequential(
+        #                 nn.Linear(2048, self.code_size),
+        #                 nn.Tanh(),
+        #                 nn.Linear(self.code_size, self.code_size),
+        #                 nn.Tanh(),
+        #             )
         self.reshape = nn.Sequential(
-                        nn.Linear(2048, self.code_size),
-                        nn.ReLU(),
-                        nn.Linear(self.code_size, self.code_size),
-                        nn.ReLU(),
+                        nn.Linear(2048, 1024),
+                        nn.Tanh(),
+                        nn.Linear(1024, 512),
+                        nn.Tanh(),
+                        nn.Linear(512, 256),
+                        nn.Tanh(),
+                        nn.Linear(256, self.code_size),
+                        nn.Tanh(),
                     )
         
         self.critic = nn.Sequential(
                         nn.Linear(self.code_size+self.nav_size+self.n_actions, 128),
-                        nn.ReLU(),
+                        nn.Tanh(),
                         nn.Linear(128, 64),
-                        nn.ReLU(),
+                        nn.Tanh(),
                         nn.Linear(64, 32),
-                        nn.ReLU(),
+                        nn.Tanh(),
                         nn.Linear(32, 1),
                     )
 

@@ -7,7 +7,7 @@ from sim.settings import RGB_CAMERA, SSC_CAMERA
 
 class CameraSensor():
 
-    def __init__(self, vehicle, path):
+    def __init__(self, vehicle, path=None):
         self.sensor_name = SSC_CAMERA
         self.parent = vehicle
         self.save_path = path
@@ -37,9 +37,9 @@ class CameraSensor():
             return
         # if self.sensor_name == SSC_CAMERA:
             # self.front_camera.append(image)
-        #     # import pdb; pdb.set_trace()
         # self.front_camera.append(image)
-        self.raw_camera = image
+        # self.raw_camera = image
+        self.front_camera.append(image)
             # image.convert(carla.ColorConverter.CityScapesPalette)
         # placeholder = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         # placeholder1 = placeholder.reshape((image.height, image.width, 4))

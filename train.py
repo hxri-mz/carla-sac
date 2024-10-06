@@ -33,6 +33,7 @@ import pathlib
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp-name', type=str, help='name of the experiment')
+    parser.add_argument('--version', type=str, default='0.1', help='version of the experiment')
     parser.add_argument('--env-name', type=str, default='carla', help='name of the simulation environment')
     parser.add_argument('--learning-rate', type=float, default=PPO_LEARNING_RATE, help='learning rate of the optimizer')
     parser.add_argument('--seed', type=int, default=SEED, help='seed of the experiment')
@@ -85,11 +86,12 @@ def runner():
     args = parse_args()
     exp_name = args.exp_name
     train = args.train
-    collect = True
+    collect = False
     town = args.town
     checkpoint_load = args.load_checkpoint
     total_timesteps = args.total_timesteps
     action_std_init = args.action_std_init
+    version_name = args.version
 
     try:
         if exp_name == 'ppo':
@@ -108,7 +110,7 @@ def runner():
         sys.exit()
     
     if train == True:
-        writer = SummaryWriter(f"runs/{run_name}_{action_std_init}_{int(total_timesteps)}/{town}")
+        writer = SummaryWriter(f"runs/{run_name}_{action_std_init}_{int(total_timesteps)}_{version_name}/{town}")
     else:
         writer = SummaryWriter(f"runs/{run_name}_{action_std_init}_{int(total_timesteps)}_TEST/{town}")
     writer.add_text(
@@ -281,7 +283,7 @@ def runner():
         elif train:
             #Training
             while timestep < total_timesteps:
-            
+                
                 observation = env.reset()
                 obs = tfm.transform(observation)
                 current_ep_reward = 0

@@ -12,6 +12,23 @@ from imitation_learning.model import ImitationModel
 from utils.transform import TransformObservation
 from encoder.zoo import EncoderZoo
 
+def penalty(output, nav, input_data):
+
+    # Case 1: [1, 0, 0] should map to a negative value in output[1]
+    mask_1 = (nav == torch.tensor([1.0, 0.0, 0.0])).all(dim=1)
+    penalty_1 = torch.where(output[mask_1, 1] >= 0, output[mask_1, 1], torch.tensor(0.0)).sum()
+
+    # Case 2: [0, 1, 0] should map to a positive value in output[1]
+    mask_2 = (nav == torch.tensor([0.0, 1.0, 0.0])).all(dim=1)
+    penalty_2 = torch.where(output[mask_2, 1] <= 0, -output[mask_2, 1], torch.tensor(0.0)).sum()
+
+    # Case 3: [0, 0, 1] should map to a zero value in output[1]
+    mask_3 = (nav == torch.tensor([0.0, 0.0, 1.0])).all(dim=1)
+    penalty_3 = torch.abs(output[mask_3, 1]).sum()
+
+    # Total penalty term
+    total_penalty = penalty_1 + penalty_2 + penalty_3
+
 if __name__=="__main__":
     torch.multiprocessing.set_start_method('spawn', force=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -51,6 +68,8 @@ if __name__=="__main__":
             obs = tfm.transform(obs)
             nav_obs = torch.cat((prev_nav[:,3].unsqueeze(-1), nav[:,4].unsqueeze(-1), nav[:, 0].unsqueeze(-1), next_nav[:,5:8]), axis=-1)
             nav_target = nav[:,2:4]
+            # import pdb; pdb.set_trace()
+            nav_target = torch.flip(nav_target, dims=(1,))
 
             actions = model(obs, nav_obs)
             
